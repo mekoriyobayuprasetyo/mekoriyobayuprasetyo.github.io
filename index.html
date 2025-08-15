@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relay Controller</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+    <style>
+        :root {
+            --primary: #4285f4;
+            --danger: #ea4335;
+            --success: #34a853;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .tab {
+            display: none;
+        }
+        .tab.active {
+            display: block;
+        }
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button.danger {
+            background: var(--danger);
+        }
+        button.success {
+            background: var(--success);
+        }
+        .day-checkbox {
+            margin: 10px;
+            display: inline-block;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        .on {
+            background: #d4edda;
+            color: #155724;
+        }
+        .off {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Smart Relay Control</h1>
+        <div id="statusDisplay" class="status off">Loading status...</div>
+    </div>
+
+    <div class="card">
+        <h2>Control Mode</h2>
+        <select id="modeSelector">
+            <option value="manual">Manual</option>
+            <option value="auto">Auto</option>
+            <option value="schedule">Schedule</option>
+        </select>
+    </div>
+
+    <div id="manualTab" class="card tab">
+        <h2>Manual Control</h2>
+        <button id="btnOn" class="success">Turn ON</button>
+        <button id="btnOff" class="danger">Turn OFF</button>
+    </div>
+
+    <div id="scheduleTab" class="card tab">
+        <h2>Schedule Settings</h2>
+        <div>
+            <label>ON Time: </label>
+            <input type="number" id="onHour" min="0" max="23" placeholder="Hour" style="width: 60px;">
+            <input type="number" id="onMinute" min="0" max="59" placeholder="Minute" style="width: 60px;">
+        </div>
+        <div>
+            <label>OFF Time: </label>
+            <input type="number" id="offHour" min="0" max="23" placeholder="Hour" style="width: 60px;">
+            <input type="number" id="offMinute" min="0" max="59" placeholder="Minute" style="width: 60px;">
+        </div>
+        <div>
+            <h3>Active Days</h3>
+            <div id="daysContainer"></div>
+        </div>
+        <button id="btnSaveSchedule">Save Schedule</button>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyD7jxUPVUL9cImSqbbR7U0shu5Pnht6NuI",
+            databaseURL: "https://project01-5c009-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // DOM Elements
+        const modeSelector = document.getElementById('modeSelector');
+        const manualTab = document.getElementById('manualTab');
+        const scheduleTab = document.getElementById('scheduleTab');
+        const btnOn = document.getElementById('btnOn');
+        const btnOff = document.getElementById('btnOff');
+        const btnSaveSchedule = document.getElementById('btnSaveSchedule');
+        const statusDisplay = document.getElementById('statusDisplay');
+        const daysContainer = document.getElementById('daysContainer');
+
+        // Days of the week
+        const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+        
+        // Create day checkboxes
+        days.forEach((day, index) => {
+            const div = document.createElement('div');
+            div.className = 'day-checkbox';
+            div.innerHTML = `
+                <input type="checkbox" id="day${index}" checked>
+                <label for="day${index}">${day}</label>
+            `;
+            daysContainer.appendChild(div);
+        });
+
+        // Initialize UI
+        function initUI() {
+            // Load current settings from Firebase
+            database.ref('test').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    // Update mode selector
+                    modeSelector.value = data.mode || 'manual';
+                    updateTabs();
+                    
+                    // Update relay status display
+                    updateStatusDisplay(data.data);
+                    
+                    // Update schedule tab if available
+                    if (data.schedule) {
+                        document.getElementById('onHour').value = data.schedule.on_hour || 8;
+                        document.getElementById('onMinute').value = data.schedule.on_minute || 0;
+                        document.getElementById('offHour').value = data.schedule.off_hour || 17;
+                        document.getElementById('offMinute').value = data.schedule.off_minute || 0;
+                        
+                        // Update day checkboxes
+                        if (data.schedule.days) {
+                            for (let i = 0; i < 7; i++) {
+                                const checkbox = document.getElementById(`day${i}`);
+                                if (checkbox) {
+                                    checkbox.checked = data.schedule.days[i];
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update status display
+        function updateStatusDisplay(status) {
+            statusDisplay.textContent = status ? 'RELAY: ON' : 'RELAY: OFF';
+            statusDisplay.className = `status ${status ? 'on' : 'off'}`;
+        }
+
+        // Show/hide tabs based on selected mode
+        function updateTabs() {
+            const mode = modeSelector.value;
+            manualTab.style.display = mode === 'manual' ? 'block' : 'none';
+            scheduleTab.style.display = mode === 'schedule' ? 'block' : 'none';
+        }
+
+        // Event Listeners
+        modeSelector.addEventListener('change', () => {
+            const mode = modeSelector.value;
+            database.ref('test/mode').set(mode);
+            updateTabs();
+        });
+
+        btnOn.addEventListener('click', () => {
+            database.ref('test/data').set(true);
+        });
+
+        btnOff.addEventListener('click', () => {
+            database.ref('test/data').set(false);
+        });
+
+        btnSaveSchedule.addEventListener('click', () => {
+            const scheduleData = {
+                on_hour: parseInt(document.getElementById('onHour').value) || 8,
+                on_minute: parseInt(document.getElementById('onMinute').value) || 0,
+                off_hour: parseInt(document.getElementById('offHour').value) || 17,
+                off_minute: parseInt(document.getElementById('offMinute').value) || 0,
+                days: []
+            };
+
+            // Get selected days
+            for (let i = 0; i < 7; i++) {
+                scheduleData.days.push(
+                    document.getElementById(`day${i}`).checked
+                );
+            }
+
+            // Save to Firebase
+            database.ref('test/schedule').set(scheduleData)
+                .then(() => alert('Jadwal berhasil disimpan!'))
+                .catch(error => alert('Error: ' + error.message));
+        });
+
+        // Initialize the UI
+        initUI();
+        updateTabs();
+    </script>
+</body>
+</html>
