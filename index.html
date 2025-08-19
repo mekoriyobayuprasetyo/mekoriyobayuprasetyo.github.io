@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Relay Controller + Sensor</title>
+    <title>Relay Controller + Fuzzy Logic</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <style>
@@ -184,11 +184,75 @@
             font-size: 0.9em;
             color: #7f8c8d;
         }
+        .fuzzy-panel {
+            background: #e3f2fd;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .param-control {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        .param-control label {
+            width: 180px;
+            font-weight: bold;
+        }
+        .param-control input {
+            width: 100px;
+            padding: 8px;
+            border: 1px solid #90caf9;
+            border-radius: 4px;
+        }
+        .slider-container {
+            flex-grow: 1;
+            margin-left: 15px;
+        }
+        .slider-container input {
+            width: 100%;
+        }
+        .fuzzy-viz {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+        }
+        .viz-item {
+            text-align: center;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+            width: 30%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .viz-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        @media (max-width: 600px) {
+            .param-control {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .slider-container {
+                width: 100%;
+                margin-left: 0;
+                margin-top: 8px;
+            }
+            .fuzzy-viz {
+                flex-direction: column;
+            }
+            .viz-item {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>Smart Relay Controller + Sensor</h1>
+        <h1>Smart Relay Controller + Fuzzy Logic</h1>
         <div id="statusDisplay" class="status off">Loading status...</div>
     </div>
 
@@ -196,7 +260,7 @@
         <h2>Control Mode</h2>
         <select id="modeSelector">
             <option value="manual">Manual</option>
-            <option value="auto">Auto</option>
+            <option value="auto">Auto (Fuzzy Logic)</option>
             <option value="schedule">Schedule</option>
         </select>
     </div>
@@ -239,6 +303,60 @@
         </div>
     </div>
 
+    <div class="card">
+        <h2>Fuzzy Logic Control</h2>
+        <div class="fuzzy-panel">
+            <div class="param-control">
+                <label>Suhu Threshold (°C):</label>
+                <input type="number" id="tempThreshold" min="0" max="50" step="0.5">
+                <div class="slider-container">
+                    <input type="range" id="tempSlider" min="20" max="40" step="0.5">
+                </div>
+            </div>
+            
+            <div class="param-control">
+                <label>Kelembaban Threshold (%):</label>
+                <input type="number" id="humidityThreshold" min="0" max="100" step="1">
+                <div class="slider-container">
+                    <input type="range" id="humiditySlider" min="30" max="90" step="1">
+                </div>
+            </div>
+            
+            <div class="param-control">
+                <label>Cahaya Threshold (lux):</label>
+                <input type="number" id="lightThreshold" min="0" max="1000" step="10">
+                <div class="slider-container">
+                    <input type="range" id="lightSlider" min="50" max="800" step="10">
+                </div>
+            </div>
+            
+            <div class="param-control">
+                <label>Activation Level:</label>
+                <input type="number" id="activationLevel" min="0" max="1" step="0.05">
+                <div class="slider-container">
+                    <input type="range" id="activationSlider" min="0" max="100" step="1">
+                </div>
+            </div>
+            
+            <button id="btnSaveFuzzy" class="save-button">Save Fuzzy Parameters</button>
+            
+            <div class="fuzzy-viz">
+                <div class="viz-item">
+                    <div>Suhu Membership</div>
+                    <div id="tempMembership" class="viz-value">0.0</div>
+                </div>
+                <div class="viz-item">
+                    <div>Kelembaban Membership</div>
+                    <div id="humidityMembership" class="viz-value">0.0</div>
+                </div>
+                <div class="viz-item">
+                    <div>Activation Score</div>
+                    <div id="activationScore" class="viz-value">0.0</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="connection-status">
         <div>Firebase Status: <span id="firebaseStatus" class="status-offline">Disconnected</span></div>
         <div>Last Update: <span id="lastUpdateTime">Never</span></div>
@@ -269,6 +387,18 @@
         const tempValue = document.getElementById('tempValue');
         const humidValue = document.getElementById('humidValue');
         const lightValue = document.getElementById('lightValue');
+        const tempThresholdInput = document.getElementById('tempThreshold');
+        const tempSlider = document.getElementById('tempSlider');
+        const humidityThresholdInput = document.getElementById('humidityThreshold');
+        const humiditySlider = document.getElementById('humiditySlider');
+        const lightThresholdInput = document.getElementById('lightThreshold');
+        const lightSlider = document.getElementById('lightSlider');
+        const activationLevelInput = document.getElementById('activationLevel');
+        const activationSlider = document.getElementById('activationSlider');
+        const btnSaveFuzzy = document.getElementById('btnSaveFuzzy');
+        const tempMembership = document.getElementById('tempMembership');
+        const humidityMembership = document.getElementById('humidityMembership');
+        const activationScore = document.getElementById('activationScore');
 
         // Days of the week
         const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
@@ -405,7 +535,122 @@
                 if (data.sensor_data) {
                     updateSensorDisplay(data.sensor_data);
                 }
+                
+                // Update fuzzy params
+                if (data.fuzzy_params) {
+                    tempThresholdInput.value = data.fuzzy_params.temp_threshold || 30;
+                    tempSlider.value = data.fuzzy_params.temp_threshold || 30;
+                    humidityThresholdInput.value = data.fuzzy_params.humidity_threshold || 60;
+                    humiditySlider.value = data.fuzzy_params.humidity_threshold || 60;
+                    lightThresholdInput.value = data.fuzzy_params.light_threshold || 200;
+                    lightSlider.value = data.fuzzy_params.light_threshold || 200;
+                    activationLevelInput.value = data.fuzzy_params.activation_level || 0.5;
+                    activationSlider.value = (data.fuzzy_params.activation_level || 0.5) * 100;
+                    
+                    // Update visualization
+                    if (data.sensor_data) {
+                        updateFuzzyViz(data.sensor_data, data.fuzzy_params);
+                    }
+                }
             });
+        }
+        
+        // Update fuzzy visualization
+        function updateFuzzyViz(sensorData, fuzzyParams) {
+            if (!sensorData || !fuzzyParams) return;
+            
+            // Hitung membership suhu
+            const tempMember = Math.max(0, Math.min(1, 
+                (sensorData.temperature - (fuzzyParams.temp_threshold - 5)) / 10
+            ));
+            
+            // Hitung membership kelembaban
+            const humidityMember = Math.max(0, Math.min(1, 
+                (sensorData.humidity - (fuzzyParams.humidity_threshold - 20)) / 40
+            ));
+            
+            // Hitung activation score
+            const activationScoreVal = Math.min(tempMember, humidityMember);
+            
+            // Update tampilan
+            tempMembership.textContent = tempMember.toFixed(2);
+            humidityMembership.textContent = humidityMember.toFixed(2);
+            activationScore.textContent = activationScoreVal.toFixed(2);
+        }
+        
+        // Setup fuzzy controls
+        function setupFuzzyControls() {
+            // Link input dan slider
+            tempThresholdInput.addEventListener('input', () => {
+                tempSlider.value = tempThresholdInput.value;
+            });
+            tempSlider.addEventListener('input', () => {
+                tempThresholdInput.value = tempSlider.value;
+            });
+            
+            humidityThresholdInput.addEventListener('input', () => {
+                humiditySlider.value = humidityThresholdInput.value;
+            });
+            humiditySlider.addEventListener('input', () => {
+                humidityThresholdInput.value = humiditySlider.value;
+            });
+            
+            lightThresholdInput.addEventListener('input', () => {
+                lightSlider.value = lightThresholdInput.value;
+            });
+            lightSlider.addEventListener('input', () => {
+                lightThresholdInput.value = lightSlider.value;
+            });
+            
+            activationLevelInput.addEventListener('input', () => {
+                const value = parseFloat(activationLevelInput.value);
+                if (!isNaN(value)) {
+                    activationSlider.value = value * 100;
+                }
+            });
+            activationSlider.addEventListener('input', () => {
+                activationLevelInput.value = (activationSlider.value / 100).toFixed(2);
+            });
+            
+            // Set default values
+            tempThresholdInput.value = 30;
+            tempSlider.value = 30;
+            humidityThresholdInput.value = 60;
+            humiditySlider.value = 60;
+            lightThresholdInput.value = 200;
+            lightSlider.value = 200;
+            activationLevelInput.value = 0.5;
+            activationSlider.value = 50;
+            
+            // Save button
+            btnSaveFuzzy.addEventListener('click', saveFuzzyParameters);
+        }
+        
+        // Save fuzzy parameters to Firebase
+        function saveFuzzyParameters() {
+            const fuzzyParams = {
+                temp_threshold: parseFloat(tempThresholdInput.value),
+                humidity_threshold: parseFloat(humidityThresholdInput.value),
+                light_threshold: parseFloat(lightThresholdInput.value),
+                activation_level: parseFloat(activationLevelInput.value)
+            };
+            
+            // Validasi
+            if (isNaN(fuzzyParams.temp_threshold)) fuzzyParams.temp_threshold = 30;
+            if (isNaN(fuzzyParams.humidity_threshold)) fuzzyParams.humidity_threshold = 60;
+            if (isNaN(fuzzyParams.light_threshold)) fuzzyParams.light_threshold = 200;
+            if (isNaN(fuzzyParams.activation_level)) fuzzyParams.activation_level = 0.5;
+            
+            // Save to Firebase
+            database.ref('test/fuzzy_params').set(fuzzyParams)
+                .then(() => {
+                    alert('Fuzzy parameters saved!');
+                    console.log("Fuzzy params saved", fuzzyParams);
+                })
+                .catch(error => {
+                    alert('Error saving fuzzy parameters: ' + error.message);
+                    console.error("Error saving fuzzy params:", error);
+                });
         }
         
         // Event Listeners
@@ -469,6 +714,7 @@
         function initApp() {
             initFirebase();
             updateTabs();
+            setupFuzzyControls();
             
             // Set up sensor data placeholders
             updateSensorDisplay({
